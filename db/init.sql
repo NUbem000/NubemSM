@@ -1,0 +1,7 @@
+CREATE TABLE IF NOT EXISTS speedtest_results (
+    id SERIAL PRIMARY KEY,
+    download_speed DOUBLE PRECISION,
+    upload_speed DOUBLE PRECISION,
+    latency DOUBLE PRECISION,
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
