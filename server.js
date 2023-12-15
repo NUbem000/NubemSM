@@ -17,7 +17,9 @@ const pool = new Pool({
 const speedtestInterval = parseInt(process.env.SPEEDTEST_INTERVAL);
 
 setInterval(() => {
+    console.log(`[${new Date().toISOString()}] Starting SpeedTest...`)
     speedTest.runSpeedTest(pool);
+    console.log(`[${new Date().toISOString()}] SpeedTest Data Saved`)
 }, speedtestInterval);
 
 app.get('/data', async (req, res) => {
@@ -32,4 +34,5 @@ app.get('/data', async (req, res) => {
 
 app.listen(port, () => {
     console.log(`Server running on port ${port}`);
+    console.log(`SpeedTest will run every ${speedtestInterval/60000} minutes`)
 });
