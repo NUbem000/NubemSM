@@ -23,14 +23,18 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql  # Mount init.sql
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
 
   grafana:
     image: grafana/grafana
     ports:
       - "3001:3000"
+    volumes:
+      - ./grafana:/etc/grafana/provisioning/dashboards
     depends_on:
       - db
+    environment:
+      GF_DASHBOARDS_JSON_ENABLED: 'true'
 
 volumes:
   postgres_data:
