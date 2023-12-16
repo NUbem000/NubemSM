@@ -13,8 +13,8 @@ const pool = new Pool({
 const speedtestInterval = parseInt(process.env.SPEEDTEST_INTERVAL);
 console.log(`SpeedTest will run every ${speedtestInterval/60000} minutes`);
 
-setInterval(() => {
+setInterval(async () => {
     console.log(`[${new Date().toISOString()}] Starting SpeedTest...`)
-    speedTest.runSpeedTest(pool);
+    await speedTest.runSpeedTest(pool);
     console.log(`[${new Date().toISOString()}] SpeedTest Data Saved`)
 }, speedtestInterval);
