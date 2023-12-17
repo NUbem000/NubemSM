@@ -1,0 +1,31 @@
+# Node modules
+node_modules
+
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# Directory for editor configurations
+.editorconfig
+.idea
+.vscode
+
+# Operating System Files
+.DS_Store
+Thumbs.db
+
+# Optional npm cache directory
+.npm
+
+# Optional eslint cache
+.eslintcache
+
+# Optional: other unnecessary files
+README.md
+LICENSE
+.dockerignore
+.git
+.gitignore
+*.md
+*.png
