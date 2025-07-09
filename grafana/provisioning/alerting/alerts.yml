@@ -1,0 +1,210 @@
+apiVersion: 1
+
+groups:
+  - name: SpeedMonitor Alerts
+    interval: 1m
+    rules:
+      - uid: connection-loss-alert
+        title: Internet Connection Loss
+        condition: A
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 900
+              to: 0
+            datasourceUid: postgres
+            model:
+              datasource:
+                type: postgres
+                uid: postgres
+              rawSql: |
+                SELECT COUNT(*) as value
+                FROM speedtest_results 
+                WHERE timestamp > NOW() - INTERVAL '15 minutes'
+              refId: A
+        noDataState: Alerting
+        execErrState: Alerting
+        for: 5m
+        annotations:
+          summary: No speed tests completed in the last 15 minutes
+          description: The internet connection appears to be down or the speed test service is failing.
+          runbook_url: https://github.com/NUbem000/NubemSM/wiki/Alerts#connection-loss
+        labels:
+          severity: critical
+          team: network
+
+      - uid: speed-degradation-alert
+        title: Internet Speed Degradation
+        condition: B
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 86400
+              to: 0
+            datasourceUid: postgres
+            model:
+              datasource:
+                type: postgres
+                uid: postgres
+              rawSql: |
+                SELECT AVG(download_speed) as baseline
+                FROM speedtest_results 
+                WHERE timestamp BETWEEN NOW() - INTERVAL '7 days' AND NOW() - INTERVAL '1 hour'
+              refId: A
+          - refId: B
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: postgres
+            model:
+              datasource:
+                type: postgres
+                uid: postgres
+              rawSql: |
+                SELECT AVG(download_speed) as current
+                FROM speedtest_results 
+                WHERE timestamp > NOW() - INTERVAL '1 hour'
+              refId: B
+            conditions:
+              - evaluator:
+                  params: [0.5]
+                  type: lt
+                reducer:
+                  params: []
+                  type: last
+                query:
+                  params: ['B', 'A']
+                  type: math
+                  expression: '$B / $A'
+        noDataState: NoData
+        execErrState: Alerting
+        for: 10m
+        annotations:
+          summary: Download speed dropped by more than 50%
+          description: Current download speed is {{ $values.B }} which is less than 50% of the baseline {{ $values.A }}
+          runbook_url: https://github.com/NUbem000/NubemSM/wiki/Alerts#speed-degradation
+        labels:
+          severity: warning
+          team: network
+
+      - uid: high-latency-alert
+        title: High Network Latency
+        condition: A
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: postgres
+            model:
+              datasource:
+                type: postgres
+                uid: postgres
+              rawSql: |
+                SELECT AVG(latency) as value
+                FROM speedtest_results 
+                WHERE timestamp > NOW() - INTERVAL '10 minutes'
+              refId: A
+            conditions:
+              - evaluator:
+                  params: [100]
+                  type: gt
+                reducer:
+                  params: []
+                  type: avg
+        noDataState: NoData
+        execErrState: Alerting
+        for: 5m
+        annotations:
+          summary: Network latency is above 100ms
+          description: Average latency over the last 10 minutes is {{ $values.A }}ms
+          runbook_url: https://github.com/NUbem000/NubemSM/wiki/Alerts#high-latency
+        labels:
+          severity: warning
+          team: network
+
+      - uid: upload-speed-critical
+        title: Upload Speed Critical
+        condition: A
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 1800
+              to: 0
+            datasourceUid: postgres
+            model:
+              datasource:
+                type: postgres
+                uid: postgres
+              rawSql: |
+                SELECT AVG(upload_speed / 125000) as value
+                FROM speedtest_results 
+                WHERE timestamp > NOW() - INTERVAL '30 minutes'
+              refId: A
+            conditions:
+              - evaluator:
+                  params: [5]
+                  type: lt
+                reducer:
+                  params: []
+                  type: avg
+        noDataState: NoData
+        execErrState: Alerting
+        for: 10m
+        annotations:
+          summary: Upload speed is critically low
+          description: Average upload speed is {{ $values.A }} Mbps, which is below the critical threshold of 5 Mbps
+          runbook_url: https://github.com/NUbem000/NubemSM/wiki/Alerts#upload-critical
+        labels:
+          severity: critical
+          team: network
+
+contactPoints:
+  - name: email-notifications
+    receivers:
+      - uid: email-receiver
+        type: email
+        settings:
+          addresses: alerts@nubem.dev
+          singleEmail: true
+          message: |
+            Alert: {{ .GroupLabels.alertname }}
+            Status: {{ .Status }}
+            
+            {{ range .Alerts }}
+            Summary: {{ .Annotations.summary }}
+            Description: {{ .Annotations.description }}
+            
+            Labels:
+            {{ range .Labels.SortedPairs }}
+            - {{ .Name }}: {{ .Value }}
+            {{ end }}
+            
+            {{ if .DashboardURL }}Dashboard: {{ .DashboardURL }}{{ end }}
+            {{ if .PanelURL }}Panel: {{ .PanelURL }}{{ end }}
+            {{ end }}
+
+  - name: webhook-notifications  
+    receivers:
+      - uid: webhook-receiver
+        type: webhook
+        settings:
+          url: ${ALERT_WEBHOOK_URL}
+          httpMethod: POST
+
+policies:
+  - receiver: email-notifications
+    group_by: ['alertname', 'severity']
+    group_wait: 30s
+    group_interval: 5m
+    repeat_interval: 12h
+    matchers:
+      - severity =~ "warning|critical"
+    
+  - receiver: webhook-notifications
+    group_by: ['alertname']
+    group_wait: 10s
+    group_interval: 1m
+    repeat_interval: 1h
+    matchers:
+      - severity = "critical"

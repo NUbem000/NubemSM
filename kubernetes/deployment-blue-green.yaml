@@ -1,0 +1,283 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: speedmonitor
+---
+# Blue Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: speedmonitor-blue
+  namespace: speedmonitor
+  labels:
+    app: speedmonitor
+    version: blue
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: speedmonitor
+      version: blue
+  template:
+    metadata:
+      labels:
+        app: speedmonitor
+        version: blue
+    spec:
+      containers:
+      - name: speedmonitor
+        image: ghcr.io/nubem000/nubemssm:blue
+        ports:
+        - containerPort: 3000
+        env:
+        - name: DEPLOYMENT_COLOR
+          value: "blue"
+        envFrom:
+        - secretRef:
+            name: speedmonitor-secrets
+        - configMapRef:
+            name: speedmonitor-config
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+---
+# Green Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: speedmonitor-green
+  namespace: speedmonitor
+  labels:
+    app: speedmonitor
+    version: green
+spec:
+  replicas: 0  # Initially scaled to 0
+  selector:
+    matchLabels:
+      app: speedmonitor
+      version: green
+  template:
+    metadata:
+      labels:
+        app: speedmonitor
+        version: green
+    spec:
+      containers:
+      - name: speedmonitor
+        image: ghcr.io/nubem000/nubemssm:green
+        ports:
+        - containerPort: 3000
+        env:
+        - name: DEPLOYMENT_COLOR
+          value: "green"
+        envFrom:
+        - secretRef:
+            name: speedmonitor-secrets
+        - configMapRef:
+            name: speedmonitor-config
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+---
+# Service pointing to active deployment
+apiVersion: v1
+kind: Service
+metadata:
+  name: speedmonitor-active
+  namespace: speedmonitor
+spec:
+  selector:
+    app: speedmonitor
+    version: blue  # Points to blue by default
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 3000
+  type: ClusterIP
+---
+# Service for blue deployment (for testing)
+apiVersion: v1
+kind: Service
+metadata:
+  name: speedmonitor-blue
+  namespace: speedmonitor
+spec:
+  selector:
+    app: speedmonitor
+    version: blue
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 3000
+  type: ClusterIP
+---
+# Service for green deployment (for testing)
+apiVersion: v1
+kind: Service
+metadata:
+  name: speedmonitor-green
+  namespace: speedmonitor
+spec:
+  selector:
+    app: speedmonitor
+    version: green
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 3000
+  type: ClusterIP
+---
+# Ingress
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: speedmonitor-ingress
+  namespace: speedmonitor
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    nginx.ingress.kubernetes.io/proxy-body-size: "20m"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "10"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+spec:
+  tls:
+  - hosts:
+    - speedmonitor.nubem.dev
+    secretName: speedmonitor-tls
+  rules:
+  - host: speedmonitor.nubem.dev
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: speedmonitor-active
+            port:
+              number: 80
+---
+# ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: speedmonitor-config
+  namespace: speedmonitor
+data:
+  NODE_ENV: "production"
+  LOG_LEVEL: "info"
+  SPEEDTEST_INTERVAL: "300000"
+  DB_HOST: "postgres-service"
+  DB_PORT: "5432"
+  DB_NAME: "speedmonitor"
+---
+# Secrets (example - use sealed-secrets in production)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: speedmonitor-secrets
+  namespace: speedmonitor
+type: Opaque
+stringData:
+  DB_USER: "speedmonitor"
+  DB_PASSWORD: "changeme"
+  JWT_SECRET: "changeme"
+  ADMIN_PASSWORD: "changeme"
+---
+# HorizontalPodAutoscaler
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: speedmonitor-blue-hpa
+  namespace: speedmonitor
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: speedmonitor-blue
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: speedmonitor-green-hpa
+  namespace: speedmonitor
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: speedmonitor-green
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+---
+# PodDisruptionBudget
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: speedmonitor-pdb
+  namespace: speedmonitor
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: speedmonitor

@@ -1,0 +1,182 @@
+{
+  "page_rules": [
+    {
+      "targets": [
+        {
+          "target": "url",
+          "constraint": {
+            "operator": "matches",
+            "value": "speedmonitor.nubem.dev/static/*"
+          }
+        }
+      ],
+      "actions": [
+        {
+          "id": "browser_cache_ttl",
+          "value": 31536000
+        },
+        {
+          "id": "edge_cache_ttl",
+          "value": 2678400
+        },
+        {
+          "id": "cache_level",
+          "value": "cache_everything"
+        },
+        {
+          "id": "polish",
+          "value": "lossless"
+        },
+        {
+          "id": "mirage",
+          "value": "on"
+        },
+        {
+          "id": "minify",
+          "value": {
+            "html": "on",
+            "css": "on",
+            "js": "on"
+          }
+        }
+      ],
+      "priority": 1,
+      "status": "active"
+    },
+    {
+      "targets": [
+        {
+          "target": "url",
+          "constraint": {
+            "operator": "matches",
+            "value": "speedmonitor.nubem.dev/images/*"
+          }
+        }
+      ],
+      "actions": [
+        {
+          "id": "browser_cache_ttl",
+          "value": 2678400
+        },
+        {
+          "id": "edge_cache_ttl",
+          "value": 604800
+        },
+        {
+          "id": "cache_level",
+          "value": "cache_everything"
+        },
+        {
+          "id": "polish",
+          "value": "lossy"
+        },
+        {
+          "id": "webp",
+          "value": "on"
+        },
+        {
+          "id": "image_resizing",
+          "value": "on"
+        }
+      ],
+      "priority": 2,
+      "status": "active"
+    },
+    {
+      "targets": [
+        {
+          "target": "url",
+          "constraint": {
+            "operator": "matches",
+            "value": "speedmonitor.nubem.dev/api/*"
+          }
+        }
+      ],
+      "actions": [
+        {
+          "id": "cache_level",
+          "value": "bypass"
+        },
+        {
+          "id": "disable_performance",
+          "value": true
+        }
+      ],
+      "priority": 3,
+      "status": "active"
+    },
+    {
+      "targets": [
+        {
+          "target": "url",
+          "constraint": {
+            "operator": "matches",
+            "value": "speedmonitor.nubem.dev/health"
+          }
+        }
+      ],
+      "actions": [
+        {
+          "id": "cache_level",
+          "value": "bypass"
+        },
+        {
+          "id": "disable_security",
+          "value": true
+        }
+      ],
+      "priority": 4,
+      "status": "active"
+    }
+  ],
+  "firewall_rules": [
+    {
+      "description": "Rate limit API endpoints",
+      "expression": "(http.request.uri.path contains \"/api/\" and rate(10m) > 1000)",
+      "action": "challenge",
+      "products": ["waf"]
+    },
+    {
+      "description": "Block suspicious user agents",
+      "expression": "(http.user_agent contains \"bot\" and not http.user_agent contains \"googlebot\")",
+      "action": "block",
+      "products": ["waf"]
+    }
+  ],
+  "workers": {
+    "routes": [
+      {
+        "pattern": "speedmonitor.nubem.dev/optimize/*",
+        "script": "image-optimizer"
+      }
+    ]
+  },
+  "settings": {
+    "ssl": "full_strict",
+    "always_use_https": "on",
+    "min_tls_version": "1.2",
+    "automatic_https_rewrites": "on",
+    "opportunistic_encryption": "on",
+    "brotli": "on",
+    "websockets": "on",
+    "http2": "on",
+    "http3": "on",
+    "0rtt": "on",
+    "ipv6": "on",
+    "pseudo_ipv4": "add_header",
+    "ip_geolocation": "on",
+    "max_upload": 100,
+    "challenge_ttl": 3600,
+    "security_level": "medium",
+    "development_mode": "off",
+    "rocket_loader": "on",
+    "minify": {
+      "css": "on",
+      "html": "on",
+      "js": "on"
+    },
+    "polish": "lossless",
+    "mirage": "on",
+    "webp": "on"
+  }
+}
