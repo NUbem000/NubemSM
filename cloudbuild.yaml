@@ -1,0 +1,173 @@
+steps:
+  # Build the application image
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-f'
+      - 'Dockerfile.prod'
+      - '-t'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/nubemsm-docker/speedmonitor:${SHORT_SHA}'
+      - '-t'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/nubemsm-docker/speedmonitor:latest'
+      - '--cache-from'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/nubemsm-docker/speedmonitor:latest'
+      - '.'
+    id: 'build-image'
+
+  # Push the image to Artifact Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - '--all-tags'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/nubemsm-docker/speedmonitor'
+    id: 'push-image'
+    waitFor: ['build-image']
+
+  # Run database migrations
+  - name: 'gcr.io/google-appengine/exec-wrapper'
+    args:
+      - '-i'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/nubemsm-docker/speedmonitor:${SHORT_SHA}'
+      - '-s'
+      - '${PROJECT_ID}:${_REGION}:nubemsm-postgres'
+      - '-e'
+      - 'DB_USER=speedmonitor'
+      - '-e'
+      - 'DB_NAME=speedmonitor'
+      - '-e'
+      - 'DB_HOST=/cloudsql/${PROJECT_ID}:${_REGION}:nubemsm-postgres'
+      - '--'
+      - 'npm'
+      - 'run'
+      - 'db:migrate'
+    secretEnv: ['DB_PASSWORD']
+    id: 'run-migrations'
+    waitFor: ['push-image']
+
+  # Deploy to Cloud Run (Blue)
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - 'nubemsm-blue'
+      - '--image'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/nubemsm-docker/speedmonitor:${SHORT_SHA}'
+      - '--region'
+      - '${_REGION}'
+      - '--platform'
+      - 'managed'
+      - '--service-account'
+      - 'nubemsm-cloudrun@${PROJECT_ID}.iam.gserviceaccount.com'
+      - '--allow-unauthenticated'
+      - '--set-env-vars'
+      - 'NODE_ENV=production,DEPLOYMENT_COLOR=blue'
+      - '--update-secrets'
+      - 'DB_PASSWORD=db-password:latest,JWT_SECRET=jwt-secret:latest,ADMIN_PASSWORD=admin-password:latest'
+      - '--set-cloudsql-instances'
+      - '${PROJECT_ID}:${_REGION}:nubemsm-postgres'
+      - '--cpu'
+      - '1'
+      - '--memory'
+      - '512Mi'
+      - '--min-instances'
+      - '1'
+      - '--max-instances'
+      - '10'
+      - '--concurrency'
+      - '100'
+      - '--timeout'
+      - '300'
+      - '--revision-suffix'
+      - '${SHORT_SHA}'
+    id: 'deploy-blue'
+    waitFor: ['run-migrations']
+
+  # Run smoke tests on Blue deployment
+  - name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        BLUE_URL=$(gcloud run services describe nubemsm-blue --region=${_REGION} --format='value(status.url)')
+        echo "Testing Blue deployment at: $${BLUE_URL}"
+        
+        # Health check
+        curl -f "$${BLUE_URL}/health" || exit 1
+        
+        # Metrics check
+        curl -f "$${BLUE_URL}/metrics" || exit 1
+        
+        echo "Blue deployment tests passed!"
+    id: 'test-blue'
+    waitFor: ['deploy-blue']
+
+  # If tests pass, deploy to Green (production)
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - 'nubemsm'
+      - '--image'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/nubemsm-docker/speedmonitor:${SHORT_SHA}'
+      - '--region'
+      - '${_REGION}'
+      - '--platform'
+      - 'managed'
+      - '--service-account'
+      - 'nubemsm-cloudrun@${PROJECT_ID}.iam.gserviceaccount.com'
+      - '--allow-unauthenticated'
+      - '--set-env-vars'
+      - 'NODE_ENV=production,DEPLOYMENT_COLOR=green'
+      - '--update-secrets'
+      - 'DB_PASSWORD=db-password:latest,JWT_SECRET=jwt-secret:latest,ADMIN_PASSWORD=admin-password:latest'
+      - '--set-cloudsql-instances'
+      - '${PROJECT_ID}:${_REGION}:nubemsm-postgres'
+      - '--cpu'
+      - '1'
+      - '--memory'
+      - '512Mi'
+      - '--min-instances'
+      - '2'
+      - '--max-instances'
+      - '20'
+      - '--concurrency'
+      - '100'
+      - '--timeout'
+      - '300'
+    id: 'deploy-green'
+    waitFor: ['test-blue']
+
+  # Configure traffic split (gradual rollout)
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'services'
+      - 'update-traffic'
+      - 'nubemsm'
+      - '--region'
+      - '${_REGION}'
+      - '--to-latest'
+    id: 'update-traffic'
+    waitFor: ['deploy-green']
+
+# Build configuration
+options:
+  machineType: 'N1_HIGHCPU_8'
+  logging: CLOUD_LOGGING_ONLY
+  dynamicSubstitutions: true
+
+# Substitutions
+substitutions:
+  _REGION: us-central1
+
+# Secrets
+availableSecrets:
+  secretManager:
+    - versionName: projects/${PROJECT_ID}/secrets/db-password/versions/latest
+      env: 'DB_PASSWORD'
+
+# Timeout
+timeout: 1800s

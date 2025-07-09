@@ -22,7 +22,7 @@ RUN npm test || true
 FROM node:18-alpine
 
 # Install curl for healthcheck and other runtime dependencies
-RUN apk add --no-cache curl tini
+RUN apk add --no-cache curl tini python3 make g++
 
 # Create non-root user
 RUN addgroup -g 1001 -S nodejs && \
@@ -34,7 +34,7 @@ WORKDIR /usr/src/app
 COPY package*.json ./
 
 # Install only production dependencies
-RUN npm ci --only=production && \
+RUN npm install --omit=dev && \
     npm cache clean --force
 
 # Copy application code

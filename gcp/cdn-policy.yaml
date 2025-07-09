@@ -1,0 +1,21 @@
+cdnPolicy:
+  cacheMode: CACHE_ALL_STATIC
+  defaultTtl: 3600
+  maxTtl: 86400
+  clientTtl: 3600
+  negativeCaching: true
+  negativeCachingPolicy:
+  - code: 404
+    ttl: 120
+  - code: 500
+    ttl: 10
+  serveWhileStale: 86400
+  requestCoalescing: true
+  cacheKeyPolicy:
+    includeHost: true
+    includeProtocol: true
+    includeQueryString: false
+    queryStringWhitelist:
+    - v
+    - version
+compressionMode: AUTOMATIC
