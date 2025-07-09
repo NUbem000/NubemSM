@@ -194,3 +194,14 @@ dist
 .ionide
 
 # End of https://www.toptal.com/developers/gitignore/api/visualstudiocode,node,macos
+
+# Docker
+docker-compose.override.yml
+postgres_data/
+
+# Test coverage
+.nyc_output/
+
+# Build
+build/
+dist/
